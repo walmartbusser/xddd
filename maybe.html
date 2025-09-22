@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mango FM Status</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #121212;
+      color: #f1f1f1;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    .header {
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+    .header h1 {
+      font-size: 2.5rem;
+      color: #00d2ff;
+    }
+    .card {
+      background-color: #1e1e1e;
+      border-radius: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      padding: 2rem;
+      margin: 2rem auto;
+      max-width: 600px;
+    }
+    .song-title {
+      font-size: 1.5rem;
+      color: #00ffcc;
+      text-align: center;
+      margin-top: 1rem;
+    }
+    .stats-list {
+      list-style: none;
+      padding-left: 0;
+    }
+    .stats-list li {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #333;
+    }
+    audio {
+      width: 100%;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Mango FM Status</h1>
+  </div>
+
+  <div class="card">
+    <audio id="audioPlayer" controls autoplay>
+      <source src="/stream" type="audio/ogg">
+      Your browser does not support the audio element.
+    </audio>
+<!-- Add this button and canvas below your audio player -->
+  <div class="text-center mt-3">
+    <button id="toggleWaterfall" class="btn btn-outline-info">Show Waterfall</button>
+  </div>
+  <canvas id="waterfallCanvas" width="600" height="200" style="display:none; background:#000; margin-top:10px; width:100%;"></canvas>
+
+
+    <div class="song-title" id="currentSong">Loading current song...</div>
+
+    <ul class="stats-list">
+      <li><strong>Bitrate:</strong> <span id="bitrate">–</span> kbps</li>
+      <li><strong>Listeners (current):</strong> <span id="listeners">–</span></li>
+      <li><strong>Listeners (peak):</strong> <span id="listenersPeak">–</span></li>
+      <li><strong>Genre:</strong> <span id="genre">–</span></li>
+    </ul>
+  </div>
+
+  <script>
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/status-json.xsl'); // Icecast JSON endpoint
+        const data = await res.json();
+
+        // Handle single mountpoint or array of mountpoints
+        const source = Array.isArray(data.icestats.source)
+          ? data.icestats.source[0]
+          : data.icestats.source;
+
+        document.getElementById('currentSong').textContent = source.title || 'Unknown';
+        document.getElementById('bitrate').textContent = source.bitrate || '–';
+        document.getElementById('listeners').textContent = source.listeners || '–';
+        document.getElementById('listenersPeak').textContent = source.listener_peak || '–';
+        document.getElementById('genre').textContent = source.genre || '–';
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // Initial fetch + update every 5 seconds
+    fetchStatus();
+    setInterval(fetchStatus, 5000);
+  </script>
+<script>
+const audio = document.getElementById('audioPlayer');
+const canvas = document.getElementById('waterfallCanvas');
+const ctx = canvas.getContext('2d');
+const button = document.getElementById('toggleWaterfall');
+
+let audioCtx, analyser, source;
+let dataArray;
+let waterfallActive = false;
+let yOffset = 0;
+
+button.addEventListener('click', () => {
+  waterfallActive = !waterfallActive;
+  button.textContent = waterfallActive ? 'Hide Waterfall' : 'Show Waterfall';
+  canvas.style.display = waterfallActive ? 'block' : 'none';
+
+  if (waterfallActive) {
+    initWaterfall();
+    drawWaterfall();
+  }
+});
+
+function initWaterfall() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    source = audioCtx.createMediaElementSource(audio);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    source.connect(analyser);
+    analyser.connect(audioCtx.destination);
+
+    const bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+  }
+}
+
+function drawWaterfall() {
+  if (!waterfallActive) return;
+
+  analyser.getByteFrequencyData(dataArray);
+
+  // shift canvas down
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  ctx.putImageData(imgData, 0, 1);
+
+  // draw new line of frequencies at top
+  const width = canvas.width;
+  const height = 1;
+  for (let i = 0; i < dataArray.length; i++) {
+    const value = dataArray[i];
+    const hue = 240 - (value * 240) / 255; // blue to red
+    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+    ctx.fillRect(i * (width / dataArray.length), 0, width / dataArray.length, height);
+  }
+
+  requestAnimationFrame(drawWaterfall);
+}
+</script>
+</body>
+</html>
